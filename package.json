@@ -1,0 +1,14 @@
+{
+  "name": "Omikoin-Token-Sale",
+  "version": "1.0.0",
+  "description": "Omikoin Token Sale ICO",
+  "main": "truffle.js",
+  "directories": {
+    "test": "test"
+  },
+  "author": "Theodor & Gregory",
+  "license": "ISC",
+  "devDependencies": {
+    "lite-server": "^2.3.0"
+  }
+}
