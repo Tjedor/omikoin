@@ -1,0 +1,148 @@
+App = {
+  web3Provider: null,
+  contracts: {},
+  account: "0x0",
+  loading: false,
+  tokenPrice: 1000000000000000,
+  tokensSold: 0,
+  tokensAvailable: 750000,
+
+  init: function() {
+    console.log("app initialized");
+    return App.initWeb3();
+  },
+
+  initWeb3: function() {
+    if (typeof web3 !== "undefined") {
+      // If a web3 instance is already provided by Meta Mask.
+      App.web3Provider = web3.currentProvider;
+      web3 = new Web3(web3.currentProvider);
+    } else {
+      // Specify default instance if no web3 instance provided
+      App.web3Provider = new Web3.providers.HttpProvider("http://localhost:7545");
+      web3 = new Web3(App.web3Provider);
+    }
+    web3.version.getNetwork(function(err, res) {});
+
+    return App.initContracts();
+  },
+
+  initContracts: function() {
+    $.getJSON("OmikoinTokenSale.json", function(omikoinTokenSale) {
+      App.contracts.OmikoinTokenSale = TruffleContract(omikoinTokenSale);
+      App.contracts.OmikoinTokenSale.setProvider(App.web3Provider);
+      App.contracts.OmikoinTokenSale.deployed().then(function(omikoinTokenSale) {
+        console.log("Sale address:", omikoinTokenSale.address);
+      });
+    }).done(function() {
+      $.getJSON("OmikoinToken.json", function(omikoinToken) {
+        App.contracts.OmikoinToken = TruffleContract(omikoinToken);
+        App.contracts.OmikoinToken.setProvider(App.web3Provider);
+        App.contracts.OmikoinToken.deployed().then(function(omikoinToken) {
+          console.log("Token address:", omikoinToken.address);
+        });
+        App.listenForEvents();
+        return App.render();
+      });
+    });
+  },
+
+  listenForEvents: function() {
+    App.contracts.OmikoinTokenSale.deployed().then(function(instance) {
+      instance
+        .Sell(
+          {},
+          {
+            fromBlock: 0,
+            toBlock: "latest"
+          }
+        )
+        .watch(function(error, event) {
+          console.log("event triggered", event);
+          App.render();
+        });
+    });
+  },
+
+  render: function() {
+    if (App.loading) {
+      return;
+    }
+    App.loading = true;
+    var loader = $("#loader");
+    var content = $("#content");
+
+    loader.show();
+    content.hide();
+    //Load account  data
+    web3.eth.getCoinbase(function(err, account) {
+      if (err === null) {
+        console.log("account: " + account);
+        App.account = account;
+        $("#accountAddress").html("Your account: " + account);
+      }
+    });
+
+    App.contracts.OmikoinTokenSale.deployed()
+      .then(function(instance) {
+        omikoinTokenSaleInstance = instance;
+        return omikoinTokenSaleInstance.tokenPrice();
+      })
+      .then(function(tokenPrice) {
+        App.tokenPrice = tokenPrice;
+        $(".token-price").html(web3.fromWei(App.tokenPrice.toNumber(), "ether"));
+        return omikoinTokenSaleInstance.tokensSold();
+      })
+      .then(function(tokensSold) {
+        App.tokensSold = tokensSold.toNumber();
+        $(".tokens-sold").html(App.tokensSold);
+        $(".tokens-available").html(App.tokensAvailable);
+
+        var progressPercent = (App.tokensSold / App.tokensAvailable) * 100;
+        $("#progress").css("width", progressPercent + "%");
+
+        //load token contract
+        App.contracts.OmikoinToken.deployed()
+          .then(function(instance) {
+            omikoinTokenInstance = instance;
+            return omikoinTokenInstance.balanceOf(App.account);
+          })
+          .then(function(balance) {
+            $(".omk-balance").html(balance.toNumber());
+
+            App.loading = false;
+            loader.hide();
+            content.show();
+          });
+      });
+  },
+
+  buyTokens: function() {
+    var loader = $("#loader");
+    var content = $("#content");
+
+    loader.show();
+    content.hide();
+
+    var numberOfTokens = $("#numberOfTokens").val();
+    App.contracts.OmikoinTokenSale.deployed()
+      .then(function(instance) {
+        return instance.buyTokens(numberOfTokens, {
+          from: App.account,
+          value: numberOfTokens * App.tokenPrice,
+          gas: 500000
+        });
+      })
+      .then(function(result) {
+        console.log("tokens bought");
+        $("form").trigger("reset");
+
+        //wait for sell event
+      });
+  }
+};
+$(function() {
+  $(window).load(function() {
+    App.init();
+  });
+});
